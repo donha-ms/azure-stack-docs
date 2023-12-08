@@ -94,9 +94,9 @@ For customers and organizations that require their own local SIEM, Azure Stack H
 
 Azure Stack HCI has an integrated syslog forwarder that, once configured, emits syslog messages defined in RFC3164, with the payload in Common Event Format (CEF).
 
-The following diagram illustrates integration of Azure Stack HCI with an external SIEM. All audits, security logs, and alerts are collected on each host and exposed via syslog with the CEF payload.  
+The following diagram illustrates integration of Azure Stack HCI with an external SIEM. All audits, security logs, and alerts are collected on each host and exposed via syslog with the CEF payload.
 
-:::image type="content" source="media/other-security-features/integration-of-azure-stack-hci-with-external-siem.png" alt-text="The following diagram describes the integration of Azure Stack HCI with an external SIEM." border="false" lightbox="media/other-security-features/integration-of-azure-stack-hci-with-external-siem.png":::
+![The following diagram describes the integration of Azure Stack HCI with an external SIEM.](media/other-security-features/integration-of-azure-stack-hci-with-external-siem.svg)
 
 ## Configure syslog forwarding
 
@@ -106,8 +106,8 @@ Syslog forwarding agents work independently from each other but can be managed a
 
 The syslog forwarder in Azure Stack HCI supports the following configurations:
 
-- **Syslog forwarding with TCP, mutual authentication (client and server), and TLS 1.2 encryption:** In this configuration, both the syslog server and the syslog client can verify the identity of each other via certificates. Messages are sent over a TLS 1.2 encrypted channel. For more information, see [Syslog forwarding with TCP, mutual authentication, and TLS 1.2 encryption](#syslog-forwarding-with-tcp-mutual-authentication-and-tls-12-encryption).
-- **Syslog forwarding with TCP, server authentication, and TLS 1.2 encryption** In this configuration, the syslog client can verify the identity of the syslog server via a certificate. Messages are sent over a TLS 1.2 encrypted channel. For more information, see [Syslog forwarding with TCP, server authentication, and TLS 1.2 encryption](#syslog-forwarding-with-tcp-server-authentication-and-tls-12-encryption).
+- **Syslog forwarding with TCP, mutual authentication (client and server), and TLS 1.3 encryption:** In this configuration, both the syslog server and the syslog client can verify the identity of each other via certificates. Messages are sent over a TLS 1.3 encrypted channel. For more information, see [Syslog forwarding with TCP, mutual authentication, and TLS 1.3 encryption](#syslog-forwarding-with-tcp-mutual-authentication-and-tls-12-encryption).
+- **Syslog forwarding with TCP, server authentication, and TLS 1.3 encryption** In this configuration, the syslog client can verify the identity of the syslog server via a certificate. Messages are sent over a TLS 1.3 encrypted channel. For more information, see [Syslog forwarding with TCP, server authentication, and TLS 1.3 encryption](#syslog-forwarding-with-tcp-server-authentication-and-tls-12-encryption).
 - **Syslog forwarding with TCP and no encryption:** In this configuration, the syslog client and syslog server identities aren’t verified. Messages are sent in clear text over TCP. For more information, see [Syslog forwarding with TCP and no encryption](#syslog-forwarding-with-tcp-and-no-encryption).
 - **Syslog with UDP and no encryption:** In this configuration, the syslog client and syslog server identities aren’t verified. Messages are sent in clear text over UDP. For more information, see [Syslog forwarding with UDP and no encryption](#syslog-forwarding-with-udp-and-no-encryption).
 
@@ -142,16 +142,27 @@ The following table provides parameters for the `Set-AzSSyslogForwarder` cmdlet:
 |OutputSeverity |Level of output logging. Values are Default or Verbose. Default includes severity levels: warning, critical, or error. Verbose includes all severity levels: verbose, informational, warning, critical, or error. |String |No |
 |Remove |Remove current syslog forwarder configuration and stop syslog forwarder. |Flag |No |
 
-### Syslog forwarding with TCP, mutual authentication, and TLS 1.2 encryption
+### Syslog forwarding with TCP, mutual authentication, and TLS 1.3 encryption
 
-In this configuration, the syslog client in Azure Stack HCI forwards messages to the syslog server over TCP using TLS 1.2 encryption. During the initial handshake, the client verifies that the server provides a valid, trusted certificate. The client also provides a certificate to the server as proof of its identity.
+In this configuration, the syslog client in Azure Stack HCI forwards messages to the syslog server over TCP using TLS 1.3 encryption. During the initial handshake, the client verifies that the server provides a valid, trusted certificate. The client also provides a certificate to the server as proof of its identity.
 
 This configuration is the most secure as it provides a full validation of the identity of both the client and the server, and it sends messages over an encrypted channel.
 
 > [!IMPORTANT]
 > Microsoft strongly recommends that you use this configuration for production environments.
 
-To configure syslog forwarder with TCP, mutual authentication, and TLS 1.2 encryption, run both these cmdlets against a physical host:
+Before configuring syslog forwarder with TCP, mutual authentication, and TLS 1.3 encryption, you should first import the client certificate on all cluster nodes. You can use either management console or PowerShell to import the certificates.
+
+Certificates import requirement for all cluster nodes:
+
+|Certificate Type |Certficate Store Path |Management Console Path (Computer Account) |Notes |
+|----|----|----|----|
+|Client |\LocalMachine\My |Personal\Certificates | |
+|Root CA |\LocalMachine\Root |Trusted Root Certification Authorities\Certificates |Required only for self-signed certificate |
+|Intermediate CA |\LocalMachine\CA |Intermediate Certification Authorities\Certificates | Required only for self-signed certificate when Intermediate CA is used |
+
+> [!IMPORTANT]
+> The client certificate must contain its private key. If the client certificate is signed using a self-signed CA certificate, you must import all certificates on its certificate chain as well. All required certificates must have been imported before configuring and using the SyslogForwarder. 
 
 Configure the server and provide certificate to the client to authenticate against the server. Run the following command:
 
@@ -159,136 +170,17 @@ Configure the server and provide certificate to the client to authenticate again
    Set-AzSSyslogForwarder -ServerName <FQDN or ip address of syslog server> -ServerPort <Port number on which the syslog server is listening on> -ClientCertificateThumbprint <Thumbprint of the client certificate>
    ```
 
-> [!IMPORTANT]
-> The client certificate must contain a private key. If the client certificate is signed using a self-signed root certificate, you must import the root certificate as well.
+### Syslog forwarding with TCP, server authentication, and TLS 1.3 encryption
 
-Here is an example to set and import certificates for mutual authentication.
-
-This example script must be run from a deployment virtual machine (DVM).
-
-In this example, certificates should have been stored as pfx files on DVM.
-
-1. Provide credentials and configurations.
-
-   ```azurepowershell
-   $syslogServerName = "<FQDN or IP address of syslog server>" 
-   $syslogServerPort = "<port of your syslog server>" 
- 
-   $domainAdmin = "<your domainAdmin account name>" 
-   $domainAdminPassword = ConvertTo-SecureString -String "<your domainAdmin account password>" -AsPlainText -Force 
- 
-   $domainAdminCred = New-Object System.Management.Automation.PSCredential ($domainAdmin, $domainAdminPassword) 
- 
-   $certPassword = ConvertTo-SecureString -String "<your client certificate password>" -AsPlainText -Force 
-   $clientCertPath = "<local file path to your client cert pfx file on DVM>" 
- 
-   Import-Module C:\CloudDeployment\ECEngine\CloudEngine.dll 
-
-   Import-Module C:\CloudDeployment\ECEngine\TestEceInterface.psm1 
-
-   Import-Module C:\CloudDeployment\ECEngine\EnterpriseCloudEngine.psd1 
-
-   $Parameters = Get-EceInterfaceParameters -RolePath "BareMetal" -InterfaceName Deployment 
-
-   $nodes = Get-ClusterNode -Cluster “s-cluster” | ForEach-Object Name
-   ```
-
-1. Import client certificate for ($node in $nodes).
-
-   ```azurepowershell
-   { 
-   $params = @{  
-      ComputerName = $nodeName  
-      Credential = $domainAdminCred 
-   } 
- 
-   $session = New-PSSession @params 
- 
-   $tempPath = Invoke-Command -Session $session -ScriptBlock { 
-    return $env:TEMP 
-   } 
-   $clientCertPathOnNode = "$env:Temp\client.pfx" 
-   Copy-Item -ToSession $session -Path $clientCertPath -Destination $clientCertPathOnNode 
- 
-   $params = @{  
-      Session = $session  
-      ArgumentList = @($serverName, $serverPort, $clientCertPathOnNode, $certPassword)  
-   } 
-   Invoke-Command @params -ScriptBlock {  
-    param($ServerName, $ServerPort, $certPath, $certPassword) 
- 
-   Import-PfxCertificate -FilePath $certPath -CertStoreLocation "Cert:\\LocalMachine\My" -Password $certPassword 
-    Remove-Item -Path $certPath 
-   } 
-  
-   Remove-PSSession -Session $session 
-   } 
- 
-   Import self-signed root certificate
-   ```
-
-   Use the following section only in relevant cases:
-
-   ```azurepowershell
-   $rootCertPath = "local file path to your client cert pfx file on DVM" 
-   foreach ($node in $nodes) 
-   { 
-   $params = @{  
-      ComputerName = $nodeName  
-      Credential = $domainAdminCred 
-   }
-
-   $session = New-PSSession @params
-
-   $tempPath = Invoke-Command -Session $session -ScriptBlock { 
-    return $env:TEMP 
-   } 
-  
-   $rootCertPathOnNode = "$env:Temp\root.pfx" 
-   Copy-Item -ToSession $session -Path $rootCertPath -Destination $rootCertPathOnNode 
-
-   $params = @{  
-      Session = $session  
-      ArgumentList = @($serverName, $serverPort, $clientCertPathOnNode)  
-   } 
-  
-   Invoke-Command @params -ScriptBlock {  
-   param($ServerName, $ServerPort, $certPath) 
-
-   Import-PfxCertificate -FilePath $certPath -CertStoreLocation "Cert:\\LocalMachine\root" -Password $certPassword 
-   Remove-Item -Path $certPath 
-   } 
-   Remove-PSSession -Session $session 
-   }
-   ```
-
-1. Set the syslog forwarder to use mutual authentication.
-
-   An action plan will be started and its ID will be stored in `$actionPlanInstanceId`. Monitor the action plan and validate that it completes successfully.
-
-   ```azurepowershell
-   $clientCert = Get-PfxCertificate -FilePath $clientCertPath 
-   $params = @{ 
-    ComputerName = $nodes[0] 
-    ArgumentList = @($syslogServerName, $syslogServerPort, $clientCert.Thumbprint) 
-   } 
-
-   $actionPlanInstanceId = Invoke-Command @params -ScriptBlock { 
-  
-   param($ServerName, $ServerPort, $ClientCertThumbprint) 
-   return Set-AzSSyslogForwarder -ServerName $ServerName -ServerPort $ServerPort -ClientCertificateThumbprint $ClientCertThumbprint 
-   }
-   ```
-
-### Syslog forwarding with TCP, server authentication, and TLS 1.2 encryption
-
-In this configuration, the syslog forwarder in Azure Stack HCI forwards the messages to the syslog server over TCP, with TLS 1.2 encryption. During the initial handshake, the client also verifies that the server provides a valid, trusted certificate.
+In this configuration, the syslog forwarder in Azure Stack HCI forwards the messages to the syslog server over TCP, with TLS 1.3 encryption. During the initial handshake, the client also verifies that the server provides a valid, trusted certificate.
 
 This configuration prevents the client from sending messages to untrusted destinations. TCP using authentication and encryption is the default configuration and represents the minimum level of security that Microsoft recommends for a production environment.
 
 ```azurepowershell
 Set-AzSSyslogForwarder -ServerName <FQDN or ip address of syslog server> -ServerPort <Port number on which the syslog server is listening on>
 ```
+
+If you want to use a self-signed certificate for your syslog server, you should properly import all missing certificates on its certificate chain, on all Azure Stack HCI cluster nodes, so that server authentication can be enabled.
 
 In case you want to test the integration of your syslog server with the Azure Stack HCI syslog forwarder by using a self-signed or untrusted certificate, you can use these flags to skip the server validation done by the client during the initial handshake.
 
@@ -299,7 +191,7 @@ In case you want to test the integration of your syslog server with the Azure St
    -SkipServerCNCheck
    ```
 
-1. Skip entirely the server certificate validation.
+2. Skip entirely the server certificate validation.
 
    ```azurepowershell
    Set-AzSSyslogForwarder -ServerName <FQDN or ip address of syslog server> -ServerPort <Port number on which the syslog server is listening on>  
